@@ -1,14 +1,22 @@
 const express = require('express');
 const cors = require('cors');
+const multer = require('multer');
+const pdfParse = require('pdf-parse');
 require('dotenv').config();
 const { OpenAI } = require('openai');
+const db = require('./db');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+const upload = multer({ storage: multer.memoryStorage() });
+
 const apiKey = process.env.OPENAI_API_KEY;
 const openai = apiKey ? new OpenAI({ apiKey }) : null;
+
+// Initialize DB on startup
+db.initDb();
 
 // Helper for realistic fallback questions when API key is missing or quota is exceeded
 function getMockQuestions(role) {
@@ -40,98 +48,183 @@ function getMockQuestions(role) {
   }
 }
 
-// Endpoint 1: Generate 5 questions based on job role
-app.post('/generate-questions', async (req, res) => {
+// ----------------------------------------------------
+// PHASE 2 & 4: NEW ENDPOINTS FOR PERSISTENCE & RESUME
+// ----------------------------------------------------
+
+// 1. Create a new session (with optional resume upload)
+app.post('/api/sessions', upload.single('resume'), async (req, res) => {
   try {
     const { role } = req.body;
-    if (!role || typeof role !== 'string' || !role.trim()) {
+    let resumeText = null;
+
+    if (!role) {
       return res.status(400).json({ error: 'Job role is required' });
     }
 
-    if (openai) {
-      try {
-        const completion = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [
-            { 
-              role: "system", 
-              content: "You are an expert technical interviewer. Generate 5 distinct, high-quality interview questions for the given job role. Return a JSON object with a single key 'questions' containing an array of 5 strings." 
-            },
-            { role: "user", content: `Job Role: ${role.trim()}` }
-          ],
-          response_format: { type: "json_object" }
-        });
-
-        const parsedContent = JSON.parse(completion.choices[0].message.content);
-        const questions = parsedContent.questions || Object.values(parsedContent)[0] || [];
-
-        if (Array.isArray(questions) && questions.length > 0) {
-          return res.json(questions);
-        }
-      } catch (apiError) {
-        console.warn("OpenAI API call failed (using realistic fallback):", apiError.message);
-      }
+    if (req.file) {
+      const pdfData = await pdfParse(req.file.buffer);
+      resumeText = pdfData.text.substring(0, 5000); // Limit context size
     }
 
-    // Fallback if OpenAI call fails or no API key set
-    const fallbackQuestions = getMockQuestions(role.trim());
-    return res.json(fallbackQuestions);
+    // Default user id 1 (Guest User created in initDb)
+    const result = await db.query(
+      `INSERT INTO sessions (user_id, role, resume_text) VALUES ($1, $2, $3) RETURNING *`,
+      [1, role.trim(), resumeText]
+    );
 
+    res.status(201).json(result.rows[0]);
   } catch (error) {
-    console.error('Error generating questions:', error);
-    res.status(500).json({ error: error.message || 'Failed to generate questions' });
+    console.error('Error creating session:', error);
+    res.status(500).json({ error: 'Failed to create session' });
   }
 });
 
-// Endpoint 2: Evaluate user's answer
-app.post('/evaluate-answer', async (req, res) => {
+// 2. Get all sessions for dashboard
+app.post('/api/sessions/list', async (req, res) => {
+  // Using POST or GET is fine, sticking to simple GET for REST
   try {
-    const { question, answer } = req.body;
-    if (!question) {
-      return res.status(400).json({ error: 'Question is required' });
+    const result = await db.query(
+      `SELECT s.*, 
+       (SELECT COUNT(*) FROM questions q WHERE q.session_id = s.id) as question_count,
+       (SELECT AVG(f.score) FROM feedback f JOIN answers a ON f.answer_id = a.id JOIN questions q ON a.question_id = q.id WHERE q.session_id = s.id) as avg_score
+       FROM sessions s 
+       WHERE s.user_id = 1 
+       ORDER BY s.created_at DESC`
+    );
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Error fetching sessions:', error);
+    res.status(500).json({ error: 'Failed to fetch sessions' });
+  }
+});
+
+// 3. Chat Interview Endpoint (Now Saves to DB)
+app.post('/api/sessions/:id/chat', async (req, res) => {
+  try {
+    const sessionId = req.params.id;
+    const { history, answer } = req.body; // answer is the latest answer provided by the user
+    
+    // Fetch session
+    const sessionRes = await db.query('SELECT * FROM sessions WHERE id = $1', [sessionId]);
+    if (sessionRes.rows.length === 0) {
+      return res.status(404).json({ error: 'Session not found' });
     }
+    const session = sessionRes.rows[0];
 
-    if (openai) {
-      try {
-        const completion = await openai.chat.completions.create({
-          model: "gpt-4o-mini",
-          messages: [
-            { 
-              role: "system", 
-              content: "You are an interviewer evaluating a candidate's response. Evaluate the answer concisely and constructively. Return a JSON object with two keys: 'score' (an integer from 1 to 10) and 'feedback' (a string with brief actionable feedback)." 
-            },
-            { role: "user", content: `Question: ${question}\nCandidate Answer: ${answer || '(No answer provided)'}` }
-          ],
-          response_format: { type: "json_object" }
-        });
+    // Default history fallback
+    const chatHistory = history || [];
+    
+    // If user provided an answer, save it and evaluate
+    let evaluationResult = null;
+    let savedAnswerId = null;
 
-        const evaluation = JSON.parse(completion.choices[0].message.content);
-        return res.json(evaluation);
-      } catch (apiError) {
-        console.warn("OpenAI API call failed (using evaluation fallback):", apiError.message);
+    if (answer && chatHistory.length > 0) {
+      // Find the last question in the DB to attach this answer to
+      const lastQRes = await db.query('SELECT id FROM questions WHERE session_id = $1 ORDER BY order_num DESC LIMIT 1', [sessionId]);
+      if (lastQRes.rows.length > 0) {
+        const lastQId = lastQRes.rows[0].id;
+        
+        // Save Answer
+        const ansRes = await db.query(
+          'INSERT INTO answers (question_id, content) VALUES ($1, $2) RETURNING id',
+          [lastQId, answer]
+        );
+        savedAnswerId = ansRes.rows[0].id;
+
+        // Evaluate using OpenAI (or fallback)
+        if (openai) {
+          try {
+            const evalCompletion = await openai.chat.completions.create({
+              model: "gpt-4o-mini",
+              messages: [
+                { role: "system", content: "You are an expert technical interviewer. Evaluate the answer concisely. Return JSON with 'score' (1-10) and 'feedback' (string)." },
+                { role: "user", content: `Question: ${chatHistory[chatHistory.length - 1].content}\nAnswer: ${answer}` }
+              ],
+              response_format: { type: "json_object" }
+            });
+            evaluationResult = JSON.parse(evalCompletion.choices[0].message.content);
+          } catch (e) {
+            console.warn("OpenAI Eval failed:", e.message);
+          }
+        }
+        
+        // Fallback Eval
+        if (!evaluationResult) {
+          const trimmed = answer.trim();
+          evaluationResult = { score: trimmed.length > 50 ? 8 : 5, feedback: "Try to elaborate more on your points." };
+        }
+
+        // Save Feedback
+        await db.query(
+          'INSERT INTO feedback (answer_id, score, comment) VALUES ($1, $2, $3)',
+          [savedAnswerId, evaluationResult.score, evaluationResult.feedback]
+        );
       }
     }
 
-    // Fallback evaluation logic
-    const trimmed = (answer || '').trim();
-    let score = 5;
-    let feedback = "Your answer is quite brief. Try elaborating on key technical terms, practical examples, and specific methodologies to strengthen your response.";
+    // Generate Next Question
+    let nextQuestionText = "";
+    if (openai) {
+      try {
+        let systemPrompt = `You are an expert technical interviewer for a ${session.role}. `;
+        if (session.resume_text) {
+          systemPrompt += `Here is the candidate's resume/job description context: "${session.resume_text}". Use this to tailor your questions heavily. `;
+        }
+        
+        if (chatHistory.length === 0) {
+          systemPrompt += `Generate the first interview question. Return JSON: { "nextQuestion": "..." }`;
+        } else {
+          systemPrompt += `The user has just answered. Ask a relevant follow-up question, or move to a new topic. Return JSON: { "nextQuestion": "..." }`;
+        }
 
-    if (trimmed.length > 100) {
-      score = 9;
-      feedback = "Great answer! You provided a detailed explanation with clear technical understanding and context.";
-    } else if (trimmed.length > 40) {
-      score = 7;
-      feedback = "Good response covering the main points. Adding a concrete real-world example would make it even better.";
+        const messages = [
+          { role: "system", content: systemPrompt },
+          ...chatHistory.map(msg => ({ role: msg.role === 'interviewer' ? 'assistant' : 'user', content: msg.content }))
+        ];
+        if (answer) messages.push({ role: 'user', content: answer });
+
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          messages: messages,
+          response_format: { type: "json_object" }
+        });
+
+        nextQuestionText = JSON.parse(completion.choices[0].message.content).nextQuestion;
+      } catch (apiError) {
+        console.warn("OpenAI Q-Gen failed:", apiError.message);
+      }
     }
 
-    return res.json({ score, feedback });
+    // Fallback Q-Gen
+    if (!nextQuestionText) {
+      if (chatHistory.length === 0) {
+        const initialQs = getMockQuestions(session.role);
+        nextQuestionText = initialQs[0];
+      } else {
+        const mockFollowUp = ["Can you elaborate?", "What is a practical example?", "How do you handle errors?"];
+        nextQuestionText = mockFollowUp[Math.floor(Math.random() * mockFollowUp.length)];
+      }
+    }
+
+    // Save Next Question to DB
+    const orderNum = Math.floor(chatHistory.length / 2) + 1;
+    await db.query(
+      'INSERT INTO questions (session_id, content, order_num) VALUES ($1, $2, $3)',
+      [sessionId, nextQuestionText, orderNum]
+    );
+
+    return res.json({
+      evaluation: evaluationResult,
+      nextQuestion: nextQuestionText
+    });
 
   } catch (error) {
-    console.error('Error evaluating answer:', error);
-    res.status(500).json({ error: error.message || 'Failed to evaluate answer' });
+    console.error('Error in chat interview:', error);
+    res.status(500).json({ error: error.message || 'Failed to process chat interview' });
   }
 });
+
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => console.log(`Backend server running on http://localhost:${PORT}`));
