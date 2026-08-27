@@ -1,4 +1,4 @@
-# AI Interview Coach
+# AI-Interview-Coach-
 
 An AI-powered Mock Interviewer application built with React (Vite), Express.js, and OpenAI API.
 
@@ -50,3 +50,4 @@ Frontend runs on `http://localhost:5173`.
 
 - `POST /generate-questions`: Accepts `{ "role": "React Developer" }` and returns 5 interview questions.
 - `POST /evaluate-answer`: Accepts `{ "question": "...", "answer": "..." }` and returns `{ "score": 9, "feedback": "..." }`.
+
