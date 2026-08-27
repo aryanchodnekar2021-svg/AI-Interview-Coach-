@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 
 function ActiveInterview() {
   const { id } = useParams();
   const navigate = useNavigate();
   
-  const [loading, setLoading] = useState(true); // Initial load for first question
+  const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [chatHistory, setChatHistory] = useState([]); 
   const [currentQuestion, setCurrentQuestion] = useState('');
@@ -31,10 +31,9 @@ function ActiveInterview() {
       });
       const data = await res.json();
       
-      if (!res.ok) throw new Error(data.error || 'Failed to process answer');
+      if (!res.ok) throw new Error(data.error || 'Failed to process signal');
 
       if (answer && data.evaluation) {
-         // We had an answer, so update history with it and its evaluation
          const updatedHistory = [...history];
          updatedHistory[updatedHistory.length - 1].evaluation = data.evaluation;
          setChatHistory(updatedHistory);
@@ -87,7 +86,7 @@ function ActiveInterview() {
     setSubmitting(true);
     setErrorMessage('');
     
-    const finalAnswer = currentAnswer.trim() || "(Time expired, no answer provided)";
+    const finalAnswer = currentAnswer.trim() || "(Time expired, no audio captured)";
     
     const newHistory = [
       ...chatHistory,
@@ -111,7 +110,7 @@ function ActiveInterview() {
 
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SpeechRecognition) {
-      alert("Your browser does not support Web Speech API.");
+      alert("Hardware error: Web Speech API not supported in this browser.");
       return;
     }
 
@@ -140,72 +139,190 @@ function ActiveInterview() {
   const formatTime = (seconds) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
-    return `${m}:${s < 10 ? '0' : ''}${s}`;
+    return `${padZero(m)}:${padZero(s)}`;
+  };
+  
+  const padZero = (num) => (num < 10 ? `0${num}` : num);
+
+  // Helper component for the VU meter
+  const VUMeter = ({ score }) => {
+    // Score is 0-10. Needle rotation from -90deg (0) to +90deg (10).
+    const rotation = -90 + (score * 18);
+    const isGood = score >= 7.5;
+    
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '200px' }}>
+        <div className="vu-meter-container">
+          <div className="vu-meter-scale"></div>
+          {/* Ticks */}
+          {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(tick => (
+            <div 
+              key={tick} 
+              className="vu-meter-tick" 
+              style={{ 
+                transform: `translateX(-50%) rotate(${-90 + (tick * 18)}deg)`, 
+                height: tick % 5 === 0 ? '15px' : '8px',
+                background: tick >= 8 ? 'var(--teal-success)' : tick <= 4 ? 'var(--rust-alert)' : 'var(--text-faint)'
+              }}
+            />
+          ))}
+          <div 
+            className="vu-meter-needle" 
+            style={{ 
+              transform: `rotate(${rotation}deg)`,
+              animation: submitting ? 'needleWobble 0.5s infinite' : 'none'
+            }} 
+          />
+        </div>
+        <div className="mono" style={{ marginTop: '12px', fontSize: '20px', color: isGood ? 'var(--teal-success)' : 'var(--text-primary)' }}>
+          {padZero(score)}/10
+        </div>
+      </div>
+    );
   };
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '750px', margin: 'auto', fontFamily: 'Arial, sans-serif' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2>AI Mock Interview</h2>
-        <button onClick={() => navigate('/')} style={{ background: '#6c757d', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '4px', cursor: 'pointer' }}>
-          End Interview
-        </button>
+    <div className="layout-container fade-in">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px', borderBottom: '1px solid var(--border-hairline)', paddingBottom: '24px' }}>
+        <div>
+          <span className="mono text-rust" style={{ fontSize: '12px', letterSpacing: '1px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--rust-alert)', display: 'inline-block', animation: 'fadeIn 1s infinite alternate' }}></span>
+            LIVE RECORDING
+          </span>
+          <div className="mono text-faint" style={{ fontSize: '11px', marginTop: '4px' }}>ID: {id}</div>
+        </div>
+        <Link to="/" style={{ textDecoration: 'none' }}>
+          <button style={{ padding: '8px 16px', fontSize: '12px' }} className="mono text-secondary">
+            CUT & EXIT
+          </button>
+        </Link>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', marginTop: '20px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '40px' }}>
+        {/* Chat History */}
         {chatHistory.map((msg, idx) => (
           <div key={idx} style={{ 
-            alignSelf: msg.role === 'user' ? 'flex-end' : 'flex-start',
-            background: msg.role === 'user' ? '#e3f2fd' : '#f5f5f5',
-            padding: '12px 16px', borderRadius: '8px', maxWidth: '85%',
-            border: msg.role === 'assistant' ? '1px solid #ddd' : 'none'
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start',
+            gap: '16px'
           }}>
-            <p style={{ margin: 0, fontSize: '15px' }}><strong>{msg.role === 'user' ? 'You' : 'Interviewer'}:</strong> {msg.content}</p>
+            <div style={{ maxWidth: '85%' }}>
+              <span className="mono text-faint" style={{ fontSize: '11px', display: 'block', marginBottom: '8px', textAlign: msg.role === 'user' ? 'right' : 'left' }}>
+                {msg.role === 'user' ? 'SUBJECT [TRACK 1]' : 'DIRECTOR [TALKBACK]'}
+              </span>
+              
+              {msg.role === 'assistant' ? (
+                <h3 style={{ fontSize: '24px', lineHeight: '1.4', margin: 0 }}>"{msg.content}"</h3>
+              ) : (
+                <p className="text-secondary" style={{ fontSize: '16px', lineHeight: '1.6', margin: 0, padding: '16px', background: 'var(--surface-2)', border: '1px solid var(--border-hairline)' }}>
+                  {msg.content}
+                </p>
+              )}
+            </div>
+            
             {msg.evaluation && (
-              <div style={{ marginTop: '12px', padding: '10px', background: '#e8f5e9', borderLeft: '4px solid #4CAF50', fontSize: '14px' }}>
-                <strong>Score: {msg.evaluation.score}/10</strong><br/>
-                <em>{msg.evaluation.feedback}</em>
+              <div style={{ width: '100%', marginTop: '24px', paddingTop: '24px', borderTop: '1px solid var(--border-hairline)', display: 'flex', gap: '40px', alignItems: 'center' }}>
+                <VUMeter score={msg.evaluation.score} />
+                <div style={{ flex: 1 }}>
+                  <span className="mono text-faint" style={{ fontSize: '11px', display: 'block', marginBottom: '8px' }}>EVALUATION LOG</span>
+                  <p className="text-secondary" style={{ fontSize: '15px', lineHeight: '1.6', margin: 0 }}>
+                    {msg.evaluation.feedback}
+                  </p>
+                </div>
               </div>
             )}
           </div>
         ))}
 
+        {/* Current Turn */}
         {currentQuestion && (
-          <div style={{ background: '#fff9e6', padding: '20px', borderRadius: '8px', border: '1px solid #ffe082', marginTop: '20px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-              <h3 style={{ margin: 0, color: '#333' }}>Interviewer</h3>
-              <span style={{ background: timeLeft < 30 ? '#ffcccc' : '#ddd', padding: '4px 10px', borderRadius: '15px', fontWeight: 'bold' }}>
-                ⏱ {formatTime(timeLeft)}
+          <div className="fade-in" style={{ marginTop: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '24px' }}>
+              <span className="mono text-faint" style={{ fontSize: '11px' }}>DIRECTOR [TALKBACK]</span>
+              <span className="mono text-rust" style={{ fontSize: '14px', border: '1px solid var(--rust-alert)', padding: '4px 8px' }}>
+                T- {formatTime(timeLeft)}
               </span>
             </div>
-            <p style={{ fontSize: '16px', marginBottom: '20px' }}>{currentQuestion}</p>
-            <textarea
-              value={currentAnswer}
-              onChange={(e) => setCurrentAnswer(e.target.value)}
-              placeholder="Type your answer or use voice input..."
-              rows="4" disabled={submitting}
-              style={{ width: '100%', padding: '12px', boxSizing: 'border-box', fontSize: '15px', borderRadius: '4px', border: '1px solid #ccc', marginBottom: '10px' }}
-            />
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button onClick={toggleRecording} disabled={submitting} style={{ padding: '10px 16px', cursor: 'pointer', background: isRecording ? '#dc3545' : '#6c757d', color: 'white', border: 'none', borderRadius: '4px' }}>
-                {isRecording ? '🛑 Stop Recording' : '🎤 Voice Input'}
-              </button>
-              <button onClick={(e) => handleSubmitAnswer(e, false)} disabled={submitting || !currentAnswer.trim()} style={{ padding: '10px 20px', cursor: (submitting || !currentAnswer.trim()) ? 'not-allowed' : 'pointer', background: '#28a745', color: 'white', border: 'none', borderRadius: '4px' }}>
-                {submitting ? 'Submitting...' : 'Submit Answer'}
-              </button>
+            
+            <h2 style={{ fontSize: '32px', lineHeight: '1.4', marginBottom: '32px' }}>
+              "{currentQuestion}"
+            </h2>
+            
+            <div className="panel" style={{ padding: '0', background: 'transparent', border: 'none' }}>
+              <textarea
+                value={currentAnswer}
+                onChange={(e) => setCurrentAnswer(e.target.value)}
+                placeholder="Transcribe audio or type response..."
+                rows="6" 
+                disabled={submitting}
+                style={{ 
+                  width: '100%', 
+                  background: 'var(--surface-1)', 
+                  border: '1px solid var(--border-hairline)', 
+                  color: 'var(--text-primary)',
+                  padding: '16px',
+                  fontSize: '16px',
+                  lineHeight: '1.6',
+                  fontFamily: 'var(--font-body)',
+                  resize: 'vertical',
+                  marginBottom: '16px',
+                  transition: 'border-color 0.2s'
+                }}
+                onFocus={(e) => e.target.style.borderColor = 'var(--brass-accent)'}
+                onBlur={(e) => e.target.style.borderColor = 'var(--border-hairline)'}
+              />
+              
+              <div style={{ display: 'flex', gap: '16px', justifyContent: 'flex-end' }}>
+                <button 
+                  onClick={toggleRecording} 
+                  disabled={submitting} 
+                  style={{ 
+                    padding: '12px 24px', 
+                    background: isRecording ? 'rgba(199, 92, 74, 0.1)' : 'transparent', 
+                    borderColor: isRecording ? 'var(--rust-alert)' : 'var(--border-hairline)',
+                    color: isRecording ? 'var(--rust-alert)' : 'var(--text-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    fontFamily: 'var(--font-mono)',
+                    fontSize: '13px'
+                  }}
+                >
+                  {isRecording ? (
+                    <><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--rust-alert)' }}></span> STOP REC</>
+                  ) : (
+                    <><span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--text-faint)' }}></span> ENABLE MIC</>
+                  )}
+                </button>
+                <button 
+                  onClick={(e) => handleSubmitAnswer(e, false)} 
+                  disabled={submitting || !currentAnswer.trim()} 
+                  className="primary mono"
+                  style={{ 
+                    padding: '12px 32px',
+                    fontSize: '13px',
+                    opacity: (submitting || !currentAnswer.trim()) ? 0.5 : 1
+                  }}
+                >
+                  {submitting ? 'PROCESSING...' : 'CUT & EVALUATE'}
+                </button>
+              </div>
             </div>
           </div>
         )}
 
         {(loading || submitting) && !currentQuestion && (
-          <div style={{ textAlign: 'center', padding: '20px', fontStyle: 'italic', color: '#666' }}>
-            Interviewer is typing...
+          <div className="mono text-faint" style={{ textAlign: 'center', padding: '60px 20px', fontSize: '13px', letterSpacing: '1px' }}>
+            AWAITING SIGNAL...
           </div>
         )}
       </div>
 
       {errorMessage && (
-        <div style={{ color: '#d9534f', backgroundColor: '#fdf7f7', border: '1px solid #d9534f', padding: '10px', borderRadius: '4px', marginTop: '1.5rem' }}>{errorMessage}</div>
+        <div className="mono text-rust" style={{ marginTop: '40px', padding: '16px', background: 'rgba(199, 92, 74, 0.1)', borderLeft: '2px solid var(--rust-alert)' }}>
+          ERR: {errorMessage}
+        </div>
       )}
     </div>
   );

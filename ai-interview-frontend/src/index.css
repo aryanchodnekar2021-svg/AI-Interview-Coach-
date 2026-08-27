@@ -1,111 +1,155 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,100..900;1,9..144,100..900&family=IBM+Plex+Mono:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;1,100;1,200;1,300;1,400;1,500;1,600;1,700&family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&display=swap');
+
 :root {
-  --text: #6b6375;
-  --text-h: #08060d;
-  --bg: #fff;
-  --border: #e5e4e7;
-  --code-bg: #f4f3ec;
-  --accent: #aa3bff;
-  --accent-bg: rgba(170, 59, 255, 0.1);
-  --accent-border: rgba(170, 59, 255, 0.5);
-  --social-bg: rgba(244, 243, 236, 0.5);
-  --shadow:
-    rgba(0, 0, 0, 0.1) 0 10px 15px -3px, rgba(0, 0, 0, 0.05) 0 4px 6px -2px;
+  /* Callback Studio Color Palette */
+  --bg-color: #14120F; /* Pitch black studio acoustic foam */
+  --surface-1: #1D1A15; /* Matte equipment casing */
+  --surface-2: #26221B; /* Slightly raised console panels */
+  --border-hairline: rgba(243, 239, 230, 0.09); /* Panel separation lines */
+  --brass-accent: #C9932A; /* Physical fader caps, patch cables, active indicator lights */
+  --teal-success: #4FA490; /* Console 'Signal Good' LED */
+  --rust-alert: #C75C4A; /* Console 'Peak/Live Recording' LED */
+  
+  --text-primary: #F3EFE6; /* High-contrast silkscreen printed labels */
+  --text-secondary: #A39C8E; /* Dimmer labels */
+  --text-faint: #6E6759; /* Unlit/inactive states */
 
-  --sans: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --heading: system-ui, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, Consolas, monospace;
-
-  font: 18px/145% var(--sans);
-  letter-spacing: 0.18px;
-  color-scheme: light dark;
-  color: var(--text);
-  background: var(--bg);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-
-  @media (max-width: 1024px) {
-    font-size: 16px;
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --text: #9ca3af;
-    --text-h: #f3f4f6;
-    --bg: #16171d;
-    --border: #2e303a;
-    --code-bg: #1f2028;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.15);
-    --accent-border: rgba(192, 132, 252, 0.5);
-    --social-bg: rgba(47, 48, 58, 0.5);
-    --shadow:
-      rgba(0, 0, 0, 0.4) 0 10px 15px -3px, rgba(0, 0, 0, 0.25) 0 4px 6px -2px;
-  }
-
-  #social .button-icon {
-    filter: invert(1) brightness(2);
-  }
+  /* Typography */
+  --font-display: 'Fraunces', serif; /* Headings, human editorial quality */
+  --font-mono: 'IBM Plex Mono', monospace; /* Data, scores, timers, labels */
+  --font-body: 'Inter', sans-serif; /* Standard prose */
 }
 
 body {
   margin: 0;
+  padding: 0;
+  background-color: var(--bg-color);
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-#root {
-  width: 1126px;
-  max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
-  min-height: 100svh;
-  display: flex;
-  flex-direction: column;
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+/* Global inputs and buttons override */
+input, textarea, button {
+  font-family: inherit;
   box-sizing: border-box;
 }
 
-h1,
-h2 {
-  font-family: var(--heading);
+input:focus, textarea:focus, button:focus {
+  outline: none;
+}
+
+button {
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--border-hairline);
+  color: var(--text-primary);
+  border-radius: 2px;
+  transition: all 0.2s ease-in-out;
+}
+
+button.primary {
+  background: var(--brass-accent);
+  color: #14120F;
+  border-color: var(--brass-accent);
   font-weight: 500;
-  color: var(--text-h);
 }
 
-h1 {
-  font-size: 56px;
-  letter-spacing: -1.68px;
-  margin: 32px 0;
-  @media (max-width: 1024px) {
-    font-size: 36px;
-    margin: 20px 0;
-  }
-}
-h2 {
-  font-size: 24px;
-  line-height: 118%;
-  letter-spacing: -0.24px;
-  margin: 0 0 8px;
-  @media (max-width: 1024px) {
-    font-size: 20px;
-  }
-}
-p {
-  margin: 0;
+button.primary:hover {
+  background: #deb050;
+  border-color: #deb050;
 }
 
-code,
-.counter {
-  font-family: var(--mono);
-  display: inline-flex;
-  border-radius: 4px;
-  color: var(--text-h);
+/* Studio structural elements */
+.layout-container {
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 40px 20px;
 }
 
-code {
-  font-size: 15px;
-  line-height: 135%;
-  padding: 4px 8px;
-  background: var(--code-bg);
+.panel {
+  background: var(--surface-1);
+  border: 1px solid var(--border-hairline);
+  padding: 24px;
+}
+
+/* Utility classes */
+.text-faint { color: var(--text-faint); }
+.text-secondary { color: var(--text-secondary); }
+.text-rust { color: var(--rust-alert); }
+.text-teal { color: var(--teal-success); }
+.text-brass { color: var(--brass-accent); }
+
+/* VU Meter animations */
+@keyframes needleWobble {
+  0% { transform: rotate(-90deg); }
+  50% { transform: rotate(10deg); }
+  100% { transform: rotate(0deg); }
+}
+
+.vu-meter-container {
+  width: 200px;
+  height: 100px;
+  position: relative;
+  overflow: hidden;
+  border-top-left-radius: 100px;
+  border-top-right-radius: 100px;
+  border: 1px solid var(--border-hairline);
+  border-bottom: none;
+  background: var(--surface-2);
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  padding-bottom: 5px;
+}
+
+.vu-meter-scale {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  top: 0;
+  left: 0;
+  border-radius: 100px 100px 0 0;
+  box-shadow: inset 0 20px 0 var(--bg-color);
+}
+
+.vu-meter-needle {
+  width: 2px;
+  height: 80px;
+  background-color: var(--brass-accent);
+  transform-origin: bottom center;
+  position: absolute;
+  bottom: -5px;
+  transition: transform 1s cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+.vu-meter-tick {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 1px;
+  height: 10px;
+  background: var(--text-faint);
+  transform-origin: bottom center;
+}
+
+.fade-in {
+  animation: fadeIn 0.25s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }

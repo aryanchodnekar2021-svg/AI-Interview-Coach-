@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { Link } from 'react-router-dom';
 
 function Dashboard() {
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
-  const navigate = useNavigate();
 
   useEffect(() => {
     fetchSessions();
@@ -16,7 +14,7 @@ function Dashboard() {
       const res = await fetch('http://localhost:5000/api/sessions/list', { method: 'POST' });
       if (res.ok) {
         const data = await res.json();
-        setSessions(data.reverse()); // Show oldest to newest on graph, or process as needed
+        setSessions(data);
       }
     } catch (error) {
       console.error('Error fetching sessions:', error);
@@ -25,64 +23,69 @@ function Dashboard() {
     }
   };
 
-  const chartData = sessions.map((s, index) => ({
-    name: `Session ${index + 1}`,
-    score: parseFloat(s.avg_score) || 0,
-    role: s.role
-  }));
-
-  if (loading) return <div style={{ padding: '2rem', textAlign: 'center' }}>Loading dashboard...</div>;
+  const padZero = (num) => (num < 10 ? `0${num}` : num);
 
   return (
-    <div style={{ padding: '2rem', maxWidth: '800px', margin: 'auto', fontFamily: 'Arial, sans-serif' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2>Interview Dashboard</h2>
-        <Link to="/setup" style={{ padding: '10px 20px', background: '#007bff', color: 'white', textDecoration: 'none', borderRadius: '4px' }}>
-          + New Interview
+    <div className="layout-container fade-in">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', borderBottom: '1px solid var(--border-hairline)', paddingBottom: '24px', marginBottom: '40px' }}>
+        <div>
+          <span className="mono text-faint" style={{ fontSize: '12px', letterSpacing: '1px', textTransform: 'uppercase' }}>Log Archive</span>
+          <h1 style={{ fontSize: '32px', marginTop: '8px' }}>Callback Master Tapes</h1>
+        </div>
+        <Link to="/setup" style={{ textDecoration: 'none' }}>
+          <button className="primary" style={{ padding: '10px 24px', fontSize: '14px' }}>
+            New session
+          </button>
         </Link>
       </div>
 
-      <div style={{ marginTop: '2rem', background: '#fff', padding: '20px', borderRadius: '8px', border: '1px solid #ddd' }}>
-        <h3>Score Progress</h3>
-        {sessions.length === 0 ? (
-          <p>No interviews completed yet. Start one to see your progress!</p>
-        ) : (
-          <div style={{ width: '100%', height: 300 }}>
-            <ResponsiveContainer>
-              <LineChart data={chartData} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis domain={[0, 10]} />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="score" stroke="#8884d8" activeDot={{ r: 8 }} name="Average Score" />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
-        )}
-      </div>
+      {loading ? (
+        <div className="mono text-faint">Loading records...</div>
+      ) : sessions.length === 0 ? (
+        <div className="panel" style={{ border: '1px dashed var(--border-hairline)', textAlign: 'center', padding: '60px 20px' }}>
+          <span className="mono text-faint" style={{ display: 'block', marginBottom: '16px' }}>NO LOGS FOUND</span>
+          <p className="text-secondary">The master tape is empty. Step into the booth to record your first session.</p>
+        </div>
+      ) : (
+        <div style={{ width: '100%', overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+            <thead>
+              <tr className="mono text-faint" style={{ fontSize: '12px', borderBottom: '1px solid var(--border-hairline)' }}>
+                <th style={{ padding: '12px 16px', fontWeight: 'normal' }}>DATE</th>
+                <th style={{ padding: '12px 16px', fontWeight: 'normal' }}>ROLE / CONTEXT</th>
+                <th style={{ padding: '12px 16px', fontWeight: 'normal' }}>TAKES</th>
+                <th style={{ padding: '12px 16px', fontWeight: 'normal', textAlign: 'right' }}>AVG SCORE</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sessions.map((s) => {
+                const date = new Date(s.created_at);
+                const score = parseFloat(s.avg_score || 0);
+                const isGood = score >= 7.5;
+                const scoreColor = score === 0 ? 'var(--text-faint)' : (isGood ? 'var(--teal-success)' : 'var(--rust-alert)');
 
-      <div style={{ marginTop: '2rem' }}>
-        <h3>Past Sessions</h3>
-        {sessions.length === 0 ? (
-          <p>No sessions found.</p>
-        ) : (
-          <ul style={{ listStyle: 'none', padding: 0 }}>
-            {sessions.map(s => (
-              <li key={s.id} style={{ padding: '15px', border: '1px solid #eee', marginBottom: '10px', borderRadius: '4px', display: 'flex', justifyContent: 'space-between' }}>
-                <div>
-                  <strong>Role:</strong> {s.role} <br/>
-                  <small style={{ color: '#666' }}>{new Date(s.created_at).toLocaleString()}</small>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <strong>Avg Score:</strong> {parseFloat(s.avg_score || 0).toFixed(1)}/10 <br/>
-                  <small>{s.question_count} Questions</small>
-                </div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+                return (
+                  <tr key={s.id} style={{ borderBottom: '1px solid var(--border-hairline)' }}>
+                    <td className="mono text-secondary" style={{ padding: '16px', fontSize: '14px' }}>
+                      {date.toISOString().split('T')[0]}
+                    </td>
+                    <td style={{ padding: '16px' }}>
+                      <div style={{ fontSize: '15px' }}>{s.role}</div>
+                      <div className="mono text-faint" style={{ fontSize: '12px', marginTop: '4px' }}>SESSION ID: {s.id.split('-')[0]}</div>
+                    </td>
+                    <td className="mono" style={{ padding: '16px', fontSize: '14px' }}>
+                      {padZero(s.question_count || 0)}
+                    </td>
+                    <td className="mono" style={{ padding: '16px', fontSize: '14px', textAlign: 'right', color: scoreColor }}>
+                      {score.toFixed(1)}/10
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
